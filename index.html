@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批卷 · 给 AI 学生的历史答案挑错</title>
+<style>
+  :root {
+    --bg: #F6F6F3; --card: #FFFFFF; --border: #E5E4DE;
+    --text: #2C2C2A; --muted: #888780; --accent: #185FA5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.8;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .badge {
+    margin-left: auto; font-size: 12px; color: var(--muted);
+    border: 1px dashed var(--border); border-radius: 999px; padding: 3px 12px;
+  }
+  .stepbar {
+    position: sticky; top: 0; z-index: 40; background: var(--bg);
+    padding: 10px 20px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .step {
+    font-size: 12px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 12px; background: var(--card);
+  }
+  .step.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .step.done { background: #EAF3DE; color: #3B6D11; border-color: #C0DD97; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 18px 20px 60px; }
+  .stage { display: none; }
+  .stage.on { display: block; }
+  .stage-title { font-size: 15px; font-weight: 600; margin: 22px 0 10px; }
+  .stage-title .no { color: var(--accent); margin-right: 6px; }
+
+  .q-card {
+    background: #FBF9F4; border: 1px solid #E8E2D2; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 14px;
+  }
+  .q-card .q-label { font-size: 12px; color: #BA7517; font-weight: 600; margin-bottom: 4px; }
+  .q-card .q-text { font-size: 16px; font-weight: 600; }
+  .q-card .author { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .howto {
+    background: #E6F1FB; border: 1px solid #B5D4F4; color: #0C447C;
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px;
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px; margin-bottom: 14px;
+  }
+  .essay { font-size: 16px; }
+  .sentence {
+    cursor: pointer; border-radius: 6px; padding: 2px 3px; margin: 0 -3px;
+    transition: background 0.12s; border-bottom: 2px solid transparent;
+  }
+  .sentence:hover { background: #F1EFE8; }
+  .sentence.locked { cursor: default; }
+  .sentence.locked:hover { background: transparent; }
+  .sentence.tagged { background: var(--sc-soft); border-bottom: 2px solid var(--sc); }
+  .sentence .chip {
+    font-size: 11px; font-weight: 600; color: #fff; background: var(--sc);
+    border-radius: 4px; padding: 1px 6px; margin-left: 4px; vertical-align: 2px;
+  }
+  .sentence.expert { background: var(--sc-soft); }
+  .sentence.expert-hit { outline: 2px solid #639922; outline-offset: 1px; }
+  .sentence.expert-miss { outline: 2px dashed #A32D2D; outline-offset: 1px; }
+  .sentence.user-wrong { background: #FCEBEB; border-bottom: 2px dashed #A32D2D; }
+  .expert-note {
+    display: block; font-size: 13px; line-height: 1.6; color: var(--muted);
+    background: #FCFCFB; border-left: 3px solid var(--sc, var(--border));
+    border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 4px 0 10px 0;
+  }
+  .expert-note b { color: var(--text); }
+  .sev-chip { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; margin-right: 6px; }
+  .sev-5, .sev-4 { background: #FCEBEB; color: #A32D2D; }
+  .sev-3 { background: #FAEEDA; color: #BA7517; }
+  .sev-2, .sev-1 { background: #F1EFE8; color: #888780; }
+  .verdict { font-weight: 600; }
+  .verdict.ok { color: #3B6D11; } .verdict.no { color: #A32D2D; }
+
+  .stars { font-size: 24px; letter-spacing: 4px; cursor: pointer; user-select: none; }
+  .stars .on { color: #EF9F27; } .stars .off { color: #D3D1C7; }
+  .btn {
+    border: none; border-radius: 8px; padding: 10px 20px;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #fff;
+  }
+  .btn.ghost { background: var(--card); color: var(--accent); border: 1px solid var(--accent); }
+  .btn:disabled { background: #B4B2A9; cursor: not-allowed; }
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+  .est-row { margin-bottom: 14px; }
+  .est-row label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .est-row label .val { font-weight: 600; color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  .score-main { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .score-num { font-size: 44px; font-weight: 600; color: var(--accent); }
+  .score-band { font-size: 16px; font-weight: 600; color: #BA7517; }
+  .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  .score-cell { background: #FCFCFB; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .score-cell .n { font-size: 22px; font-weight: 600; }
+  .score-cell .k { font-size: 12px; color: var(--muted); }
+  .list-line { font-size: 13px; background: #FCFCFB; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; line-height: 1.7; }
+  .persona-box { font-size: 13px; background: #E1F5EE; border: 1px solid #9FE1CB; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .expert-summary { font-size: 13px; background: #FBF9F4; border: 1px solid #E8E2D2; border-radius: 10px; padding: 12px 14px; }
+
+  .quiz-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; background: #FCFCFB; }
+  .quiz-card .q-src { font-size: 12px; color: var(--muted); margin-bottom: 6px; border-left: 3px solid var(--border); padding-left: 8px; }
+  .quiz-card .q-q { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .quiz-card .opt {
+    display: block; width: 100%; text-align: left; border: 1px solid var(--border);
+    background: var(--card); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px;
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .quiz-card .opt:hover { background: #F1EFE8; }
+  .quiz-card .opt.right { background: #EAF3DE; border-color: #639922; color: #3B6D11; font-weight: 600; }
+  .quiz-card .opt.wrong { background: #FCEBEB; border-color: #A32D2D; color: #A32D2D; }
+  .quiz-card .opt:disabled { cursor: default; }
+  .quiz-card .q-note { font-size: 12px; color: var(--muted); margin-top: 6px; display: none; }
+  .quiz-card .q-note.show { display: block; }
+
+  .fix-item {
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+    font-size: 13px; background: var(--card); line-height: 1.7;
+  }
+  .fix-item .idx { font-weight: 600; color: var(--accent); margin-right: 6px; }
+  .fix-item .tagchip { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+  .fopts { margin-top: 8px; }
+  .fopt {
+    display: block; width: 100%; text-align: left; border: 1px solid var(--border);
+    background: #FCFCFB; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px;
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .fopt:hover { background: #F1EFE8; }
+  .fopt.sel { background: #E6F1FB; border-color: var(--accent); font-weight: 600; }
+  .fopt.right { background: #EAF3DE; border-color: #639922; color: #3B6D11; font-weight: 600; }
+  .fopt.wrong { background: #FCEBEB; border-color: #A32D2D; color: #A32D2D; }
+  .fopt:disabled { cursor: default; }
+  .fix-std {
+    font-size: 12px; background: #FBF9F4; border-left: 3px solid #BA7517;
+    border-radius: 0 8px 8px 0; padding: 8px 12px; margin-top: 8px; line-height: 1.7; color: var(--muted);
+  }
+  .fix-std b { color: var(--text); }
+
+  select, input[type=text], input[type=password] {
+    font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); color: var(--text);
+  }
+  .desc { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  #gen-status { font-size: 13px; color: var(--muted); }
+  #gen-status.err { color: #A32D2D; }
+  #gen-status.ok { color: #3B6D11; }
+
+  #popover {
+    position: fixed; z-index: 50; display: none; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.12); width: 240px;
+  }
+  #popover .pop-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  #popover button {
+    display: block; width: 100%; text-align: left; border: 1px solid var(--border);
+    background: #FCFCFB; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px;
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  #popover button:hover { background: #F1EFE8; }
+  #popover button .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; }
+  #popover .clear { color: #A32D2D; }
+
+  #settings { position: fixed; right: 18px; bottom: 18px; z-index: 60; width: 260px; }
+  #settings-toggle {
+    float: right; border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12px; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  #settings-body {
+    display: none; clear: both; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.12); font-size: 13px;
+  }
+  #settings.open #settings-body { display: block; }
+  #settings-body label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  #settings-body input, #settings-body select { width: 100%; margin-top: 3px; }
+  #settings-body .s-note { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  #key-status { font-size: 12px; margin-top: 6px; }
+  #key-status.ok { color: #3B6D11; } #key-status.err { color: #A32D2D; }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px 0 40px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>批卷</h1>
+  <span class="sub">给 AI 学生的历史答案挑错</span>
+  <span class="badge">正式版 · 智谱 GLM 现场出题 · 离线题库兜底</span>
+</header>
+
+<div class="stepbar" id="stepbar">
+  <span class="step on" data-s="1">① 批卷</span>
+  <span class="step" data-s="2">② 估分</span>
+  <span class="step" data-s="3">③ 对照</span>
+  <span class="step" data-s="4">④ 补测</span>
+  <span class="step" data-s="5">⑤ 修复挑战</span>
+  <span class="step" data-s="6">⑥ 报告</span>
+</div>
+
+<div class="wrap">
+
+  <!-- ① 批卷 -->
+  <section class="stage on" id="stage1">
+    <div class="q-card">
+      <div class="q-label" id="q-label">题目 · 观点评析（12 分）</div>
+      <div class="q-text" id="q-text"></div>
+      <div class="author" id="q-author"></div>
+    </div>
+    <div class="howto">你是批卷教师。<b>点击你认为有问题的句子</b>，贴上错误类型标签（可改可删）；再给整篇打个星级。标得越准越好——误判好句子是要扣分的。</div>
+    <div class="card essay" id="essay"></div>
+    <div class="card">
+      <div class="row">
+        <span style="font-size:13px;color:var(--muted)">你的总评星级</span>
+        <span class="stars" id="stars"></span>
+        <span style="font-size:13px;color:var(--muted)" id="count-hint">已标记 0 句</span>
+        <span style="flex:1"></span>
+        <button class="btn" id="btn-to-est">批完了，下一步</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 估分 -->
+  <section class="stage" id="stage2">
+    <div class="stage-title"><span class="no">②</span>先别急着看答案——给自己下个注</div>
+    <div class="howto">教研组标注揭晓之前，先凭感觉估一估。批卷准不准是一回事，<b>知不知道自己准不准</b>是另一回事。</div>
+    <div class="card">
+      <div class="est-row">
+        <label>你估计这篇习作共有几处错误 <span class="val" id="v-est-total">6</span></label>
+        <input type="range" id="est-total" min="0" max="12" step="1" value="6">
+      </div>
+      <div class="est-row">
+        <label>你估计自己抓出了几处 <span class="val" id="v-est-found">4</span></label>
+        <input type="range" id="est-found" min="0" max="12" step="1" value="4">
+      </div>
+      <div class="est-row">
+        <label>你估计自己的校准分 <span class="val" id="v-est-score">70</span></label>
+        <input type="range" id="est-score" min="0" max="100" step="5" value="70">
+      </div>
+      <button class="btn" id="btn-reveal">揭晓教研组批改</button>
+    </div>
+  </section>
+
+  <!-- ③ 对照 -->
+  <section class="stage" id="stage3">
+    <div class="stage-title"><span class="no">③</span>教研组对照</div>
+    <div class="card">
+      <div class="score-main">
+        <span class="score-num" id="score-num">—</span>
+        <span class="score-band" id="score-band">—</span>
+      </div>
+      <div class="score-grid">
+        <div class="score-cell"><div class="n" id="c-hit" style="color:#3B6D11">0</div><div class="k">命中（句子和标签都对）</div></div>
+        <div class="score-cell"><div class="n" id="c-part" style="color:#BA7517">0</div><div class="k">沾边（句子对、标签错）</div></div>
+        <div class="score-cell"><div class="n" id="c-false" style="color:#A32D2D">0</div><div class="k">误判（好句子被你标了）</div></div>
+        <div class="score-cell"><div class="n" id="c-miss" style="color:#888780">0</div><div class="k">漏网（错误没抓到）</div></div>
+      </div>
+      <div class="list-line" id="list-line"></div>
+      <div class="list-line" id="est-compare"></div>
+      <div class="persona-box"><b>你的批卷画像：</b><span id="persona-text"></span></div>
+      <div class="expert-summary"><b>教研组总评：</b><span id="expert-summary"></span></div>
+      <div style="margin-top:12px"><button class="btn" id="btn-to-quiz">进入补测</button></div>
+    </div>
+    <div class="card essay" id="essay-expert"></div>
+    <div style="margin-top:4px"><button class="btn ghost" id="btn-to-quiz2">看完全部批注，进入补测</button></div>
+  </section>
+
+  <!-- ④ 补测 -->
+  <section class="stage" id="stage4">
+    <div class="stage-title"><span class="no">④</span>补测：专治你漏掉的和误判的</div>
+    <div class="howto">下面这几题，全部来自<b>你刚才失手的地方</b>。不用打字，选出你认为对的答案。</div>
+    <div id="quiz-list"></div>
+    <div class="card"><div class="row">
+      <span style="font-size:13px;color:var(--muted)" id="quiz-progress"></span>
+      <span style="flex:1"></span>
+      <button class="btn" id="btn-to-fix" disabled>进入修复挑战</button>
+    </div></div>
+  </section>
+
+  <!-- ⑤ 修复挑战 -->
+  <section class="stage" id="stage5">
+    <div class="stage-title"><span class="no">⑤</span>修复挑战：能改多少改多少</div>
+    <div class="howto">找出错误只是第一步，<b>会改才是真懂</b>。下面每一处错误都给了三个改写方案，只有一个是真正改对的——选出你认为正确的修改，改几处随你，全改当然最好。提交后，教研组会给出<b>每一处的标准修改</b>。</div>
+    <div class="card" id="fix-list-card">
+      <div id="fix-list"></div>
+      <div class="row" style="margin-top:10px">
+        <span style="font-size:13px;color:var(--muted)" id="fix-count">已动手 0 处</span>
+        <span style="flex:1"></span>
+        <button class="btn" id="btn-fix-submit" disabled>提交修复，看标准修改</button>
+      </div>
+    </div>
+    <div class="card" id="fix-result" style="display:none"></div>
+  </section>
+
+  <!-- ⑥ 报告 -->
+  <section class="stage" id="stage6">
+    <div class="stage-title"><span class="no">⑥</span>你的完整批卷报告</div>
+    <div class="card" id="report"></div>
+    <div class="card">
+      <div class="stage-title" style="margin-top:0">换一篇新习作</div>
+      <div class="row">
+        <select id="topic-sel">
+          <option value="random">随机主题（推荐）</option>
+          <option value="有人认为：「辛亥革命最终是失败的。」请结合所学知识，评析这一观点。">评析「辛亥革命最终是失败的」</option>
+          <option value="有人认为：「新航路的开辟，让世界开始连成一个整体。」请结合所学知识，评析这一观点。">评析「新航路开辟让世界连成整体」</option>
+          <option value="有人认为：「工业革命是一把双刃剑。」请结合所学知识，评析这一观点。">评析「工业革命是一把双刃剑」</option>
+          <option value="有人认为：「商鞅变法告诉我们，改革越激进越能成功。」请结合所学知识，评析这一观点。">评析「改革越激进越能成功」</option>
+          <option value="有人认为：「闭关锁国政策保护了清朝的安全与稳定。」请结合所学知识，评析这一观点。">评析「闭关锁国保护了清朝」</option>
+        </select>
+        <button class="btn" id="btn-gen">AI 现场出题</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span id="gen-status"></span>
+      </div>
+      <div class="desc">由智谱 GLM 现场生成一篇全新的带病习作（模型需要推理，约 1–2 分钟，请耐心）。没有 Key 或生成失败时，可回到题库精品题。</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost" id="btn-again">重批当前这一篇</button>
+        <button class="btn ghost" id="btn-bank">回到题库题（一战评析）</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="popover">
+  <div class="pop-title">这句的问题是什么？</div>
+  <div id="pop-tags"></div>
+  <button class="clear" id="pop-clear">清除这句的标记</button>
+</div>
+
+<div id="settings">
+  <button id="settings-toggle">AI 设置</button>
+  <div id="settings-body">
+    <label>智谱 API Key
+      <input type="password" id="api-key" placeholder="xxxx.xxxx" autocomplete="off">
+    </label>
+    <label>模型
+      <select id="model-sel">
+        <option value="glm-4.7-flash">glm-4.7-flash（免费，推荐）</option>
+        <option value="glm-5.3-flash">glm-5.3-flash（付费，长文更稳）</option>
+      </select>
+    </label>
+    <div class="s-note">Key 仅保存在本浏览器的 localStorage，不会上传。没有 Key 也能玩题库中的精品题。</div>
+    <div id="key-status"></div>
+  </div>
+</div>
+
+<footer>《批卷》 · 教育中的人工智能课程设计 · 让 AI 故意犯错，让学生学会判断</footer>
+
+<script>
+"use strict";
+
+/* ============ 错误类型 ============ */
+const TAGS = {
+  factual:  { name: "史实错误",   color: "#A32D2D", soft: "#FCEBEB" },
+  causal:   { name: "因果简单化", color: "#BA7517", soft: "#FAEEDA" },
+  absolute: { name: "绝对化表述", color: "#534AB7", soft: "#EEEDFE" },
+  anachro:  { name: "以今律古",   color: "#0F6E56", soft: "#E1F5EE" },
+  evidence: { name: "证据缺失",   color: "#185FA5", soft: "#E6F1FB" }
+};
+const SEV_NAME = { 5: "致命", 4: "致命", 3: "明显", 2: "瑕疵", 1: "瑕疵" };
+
+/* ============ 离线题库：教研级精制习作（含批注、补测、修复数据） ============ */
+const BANK = [{
+  source: "题库精制",
+  qLabel: "题目 · 观点评析（12 分）",
+  question: "有人认为：「第一次世界大战的爆发，源于萨拉热窝的一声枪响。」请结合所学知识，评析这一观点。",
+  author: "作答人：AI 学生「小智」（本题库习作由大模型生成，经人工校准，内含 9 处典型错误）",
+  expertStars: 2,
+  expertSummary: "语言流畅、结构完整，但硬伤密集、立场先行：4 处史实错误集中在阵营搭配、时间线与宣战主体；开篇「完全正确」与结尾「唯一根本」构成绝对化闭环；最致命的是用导火索替换根本原因——恰是本题要求评析的靶子。建议：不合格偏上，需重写。",
+  sentences: [
+    { t: "对于「一战的爆发源于萨拉热窝的一声枪响」这一观点，我认为它完全正确。", tag: "absolute", sev: 4,
+      note: "评析题开口就「完全正确」，立场先行、不留余地。评析类设问要求分层辨析——导火索不等于根源；先亮绝对化判断，后文就只能一条道走到黑。",
+      quiz: { q: "「我认为它完全正确」——评析题这样开头，问题在哪？",
+        opts: ["措辞不够华丽，文采不足", "评析需要分层辨析，立场先行封死了论证空间", "没有引用史料佐证"], ans: 1 },
+      fix: { std: "这一观点看到了萨拉热窝事件的导火索作用，但把导火索等同于根本原因，失之绝对，需要分层辨析。",
+        opts: ["这一观点看到了萨拉热窝事件的导火索作用，但把导火索等同于根本原因，需要分层辨析。",
+               "我认为它基本正确，只是在个别措辞上略有瑕疵。",
+               "这一观点完全错误，萨拉热窝事件与一战爆发毫无关系。"], ans: 0 } },
+    { t: "1914年6月28日，奥匈帝国皇储斐迪南大公夫妇在萨拉热窝被塞尔维亚青年普林西普刺杀，这一事件成为战争的导火索。", tag: null, sev: 0,
+      note: "这句的时间、人物、定位都准确。「导火索」的定性没有问题——问题出在把导火索当成原因本身。",
+      quiz: { q: "这句为什么挑不出毛病？",
+        opts: ["时间、人物、事件定位都准确，「导火索」定性恰当", "它其实有时间错误", "它没有给出根本原因，所以不合格"], ans: 0 } },
+    { t: "在塞尔维亚民族主义者看来，这次刺杀是对奥匈帝国吞并波斯尼亚的反抗。", tag: null, sev: 0,
+      note: "视角限定很规范：「在……看来」明确了叙述立场，是合格的历史表述。",
+      quiz: { q: "「在塞尔维亚民族主义者看来」这种写法好在哪？",
+        opts: ["限定了视角立场，是规范的历史表述", "显得模棱两可，不够果断", "只是凑字数"], ans: 0 } },
+    { t: "消息传出，愤怒的德国当即向塞尔维亚宣战，战火就此点燃。", tag: "factual", sev: 4,
+      note: "宣战主体错了：7月28日向塞尔维亚宣战的是奥匈帝国，德国是8月依同盟体系相继对俄、法宣战。「谁、何时、对谁」，史实三要素一个都不能含糊。",
+      quiz: { q: "这句的史实错误在哪？",
+        opts: ["时间错了：应是6月28日", "主体错了：宣战的是奥匈帝国而非德国", "地点错了：不在萨拉热窝"], ans: 1 },
+      fix: { std: "消息传出，奥匈帝国于 7 月 28 日向塞尔维亚宣战；随后德国依同盟体系对俄、法宣战，战火全面点燃。",
+        opts: ["消息传出，愤怒的俄国当即向塞尔维亚宣战，战火就此点燃。",
+               "消息传出，奥匈帝国于 7 月 28 日向塞尔维亚宣战，战火就此点燃。",
+               "消息传出，德国于 1915 年正式向塞尔维亚宣战，战火就此点燃。"], ans: 1 } },
+    { t: "更深一层看，当时帝国主义各国政治经济发展不平衡，后起的德国要求按实力重新瓜分世界，列强矛盾步步激化。", tag: null, sev: 0,
+      note: "这句恰恰点到了根本原因，是全篇最有含金量的一句——可惜被放在中段一笔带过，没能成为论述主线。",
+      quiz: { q: "教研组为什么说这句「最有含金量」？",
+        opts: ["它用了高级词汇", "它点到了根本原因，本应成为论述主线", "它篇幅最长"], ans: 1 } },
+    { t: "早在战前，德国、奥匈帝国与俄国就结成了三国同盟，英国、法国则与意大利组成三国协约，两大集团针锋相对。", tag: "factual", sev: 5,
+      note: "阵营张冠李戴：三国同盟是德、奥匈、意；三国协约是英、法、俄。这是一战叙事中最常被写错的一组搭配。",
+      quiz: { q: "两大军事集团的正确组成是？",
+        opts: ["同盟：德、奥匈、俄；协约：英、法、意", "同盟：德、法、意；协约：英、俄、奥匈", "同盟：德、奥匈、意；协约：英、法、俄"], ans: 2 },
+      fix: { std: "早在战前，德国、奥匈帝国与意大利结成三国同盟，英、法、俄组成三国协约，两大集团针锋相对。",
+        opts: ["早在战前，德国、奥匈帝国与意大利结成三国同盟，英、法、俄组成三国协约。",
+               "早在战前，德国、法国与意大利结成三国同盟，英、俄、奥匈帝国组成三国协约。",
+               "早在战前，德国、奥匈帝国与俄国结成三国协约，英、法、意组成三国同盟。"], ans: 0 } },
+    { t: "据说德国皇帝曾私下扬言「不惜一切代价也要打这一仗」，可见德国早有全盘预谋。", tag: "evidence", sev: 3,
+      note: "「据说」是最危险的史料来源：无出处、无原文、无时间。AI 尤其擅长编造这种貌似生动的引语——批卷时遇到，一律按孤证不立处理。",
+      quiz: { q: "「据说德国皇帝曾私下扬言……」的问题在？",
+        opts: ["无出处、无原文、无时间，孤证不立", "德国皇帝不可能说这种话", "引语应该更长才可信"], ans: 0 },
+      fix: { std: "应删去这句无出处的传闻，改用可查证的档案材料——例如战前德国向奥匈开出的「空头支票」，方可用作德国推动战争的证据。",
+        opts: ["把「据说」改为「众所周知」，引语保留，语气更肯定。",
+               "把德国皇帝改为法国总统，其余内容保留。",
+               "删去这句无出处的传闻，改用可查证的档案材料作证据。"], ans: 2 } },
+    { t: "战争从1914年一直打到1919年，最终以同盟国的惨胜收场。", tag: "factual", sev: 5,
+      note: "两处硬伤：战争结束于1918年11月；获胜方是协约国而非同盟国。一句话两个史实错误。",
+      quiz: { q: "这句有几处史实错误？",
+        opts: ["一处：只有年份错了", "没有错误", "两处：结束年份与获胜方都错"], ans: 2 },
+      fix: { std: "战争从 1914 年持续到 1918 年，最终以同盟国战败、协约国获胜收场。",
+        opts: ["战争从 1914 年一直打到 1919 年，最终以协约国的惨胜收场。",
+               "战争从 1914 年持续到 1918 年，最终以同盟国战败、协约国获胜收场。",
+               "战争从 1914 年持续到 1918 年，最终以同盟国的惨胜收场。"], ans: 1 } },
+    { t: "由于中国宣布中立，这场战争没有对中国产生任何影响。", tag: "factual", sev: 4,
+      note: "中国1917年对德宣战，十四万华工赴欧「以工代兵」；战后山东问题更直接引爆五四运动。「没有任何影响」既不准确，也漏掉了中国与世界史的关联。",
+      quiz: { q: "关于中国与一战，正确的是？",
+        opts: ["中国1917年对德宣战，华工赴欧，山东问题引爆五四", "中国全程中立，未受影响", "中国派陆军赴西线作战"], ans: 0 },
+      fix: { std: "中国 1917 年对德宣战，以十四万华工「以工代兵」参战；战后山东问题更直接引爆五四运动，战争深刻影响了中国。",
+        opts: ["中国 1917 年对德宣战，华工赴欧「以工代兵」；战后山东问题引爆五四运动。",
+               "中国虽宣布中立，但通过军火贸易间接影响了战争进程。",
+               "中国派遣远征军赴西线作战，直接影响了战局走向。"], ans: 0 } },
+    { t: "如果斐迪南夫妇能像今天的国家元首那样配备严密的安保体系，这场悲剧本来可以避免。", tag: "anachro", sev: 2,
+      note: "用当代的安保标准衡量1914年的政治环境，是典型的时代错置。历史分析必须回到当时的条件与观念之中。",
+      quiz: { q: "这句的思维错误属于？",
+        opts: ["史实错误", "以今律古：用当代标准衡量历史情境", "证据缺失"], ans: 1 },
+      fix: { std: "应删去这句以今律古的假设；若要分析安保因素，须回到 1914 年的历史条件之中，而非以今天的标准衡量。",
+        opts: ["如果斐迪南夫妇改乘火车出行，这场悲剧本来可以避免。",
+               "这说明安保水平的落后是第一次世界大战爆发的重要原因。",
+               "应删去这句假设；分析历史须回到 1914 年的条件，而非以今天的标准衡量。"], ans: 2 } },
+    { t: "因此，即使没有帝国主义矛盾的重叠积累，这一次刺杀也足以引发一场世界大战。", tag: "causal", sev: 5,
+      note: "把导火索当成充分条件：抽掉帝国主义矛盾这个深层结构谈「足以」，因果链就断了。这句直接撞在本题的靶心上，是全篇最致命的一处。",
+      quiz: { q: "为什么说这句的因果链断了？",
+        opts: ["刺杀根本没有引发战争", "语句不通顺", "把导火索当成充分条件，抽掉了深层结构原因"], ans: 2 },
+      fix: { std: "刺杀只是导火索；正是帝国主义矛盾的长期积累，才使一次局部冲突被放大为世界大战。没有这一深层结构，刺杀不足以引发大战。",
+        opts: ["因此，即使没有这次刺杀，世界大战也绝不可能发生。",
+               "刺杀只是导火索；正是帝国主义矛盾的长期积累，才使局部冲突被放大为世界大战。",
+               "因此，这次刺杀作为根本原因，足以单独引发一场世界大战。"], ans: 1 } },
+    { t: "综上所述，萨拉热窝的枪声是第一次世界大战爆发的唯一根本原因。", tag: "absolute", sev: 3,
+      note: "「唯一」加「根本」，把多重原因压成单线叙事。结论句最需要克制：直接原因与根本原因应分层表述。",
+      quiz: { q: "结论句更规范的写法是？",
+        opts: ["萨拉热窝事件是爆发的唯一原因", "萨拉热窝事件是直接导火索，深层根源在于帝国主义矛盾", "一战爆发纯属偶然"], ans: 1 },
+      fix: { std: "综上所述，萨拉热窝的枪声是第一次世界大战爆发的直接导火索，而深层根源在于帝国主义各国之间不可调和的矛盾。",
+        opts: ["综上所述，萨拉热窝的枪声是战争爆发的直接导火索，深层根源在于帝国主义矛盾。",
+               "综上所述，第一次世界大战的爆发纯属偶然事件。",
+               "综上所述，萨拉热窝事件是不是根本原因，仍有待进一步考证。"], ans: 0 } }
+  ]
+}];
+
+const RANDOM_TOPICS = [
+  "有人认为：「辛亥革命最终是失败的。」请结合所学知识，评析这一观点。",
+  "有人认为：「新航路的开辟，让世界开始连成一个整体。」请结合所学知识，评析这一观点。",
+  "有人认为：「工业革命是一把双刃剑。」请结合所学知识，评析这一观点。",
+  "有人认为：「商鞅变法告诉我们，改革越激进越能成功。」请结合所学知识，评析这一观点。",
+  "有人认为：「闭关锁国政策保护了清朝的安全与稳定。」请结合所学知识，评析这一观点。",
+  "有人认为：「洋务运动的失败说明学习西方技术没有用。」请结合所学知识，评析这一观点。",
+  "有人认为：「巴黎和会上中国外交的失败完全是弱国无外交的必然结果。」请结合所学知识，评析这一观点。"
+];
+
+/* ============ 状态 ============ */
+let current = null;      // 当前习作（题库或 AI 生成）
+const userTags = {};
+let userStars = 0;
+let popIdx = null;
+let stage = 1;
+let estTotal = 6, estFound = 4, estScore = 70;
+let grading = null;
+let quizList = [];
+let fixAnswers = {};
+let fixSubmitted = false;
+let fixResult = null;
+let generating = false;
+
+const $ = id => document.getElementById(id);
+
+function gotoStage(n) {
+  stage = n;
+  for (let k = 1; k <= 6; k++) {
+    $("stage" + k).classList.toggle("on", k <= n);
+    const st = document.querySelector('.step[data-s="' + k + '"]');
+    st.classList.toggle("on", k === n);
+    st.classList.toggle("done", k < n);
+  }
+  const el = $("stage" + n);
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetState() {
+  Object.keys(userTags).forEach(k => delete userTags[k]);
+  userStars = 0; grading = null; quizList = [];
+  fixAnswers = {}; fixSubmitted = false; fixResult = null;
+  $("fix-result").style.display = "none";
+}
+
+function loadEssay(essay) {
+  current = essay;
+  resetState();
+  $("q-label").textContent = essay.qLabel || "题目 · 观点评析（12 分）";
+  $("q-text").textContent = essay.question;
+  $("q-author").textContent = essay.author + "　来源：" + essay.source;
+  const n = essay.sentences.length;
+  $("est-total").max = n; $("est-found").max = n;
+  renderEssay(); renderStars(); renderCount();
+  gotoStage(1);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ============ ① 批卷 ============ */
+const essayEl = $("essay");
+
+function renderEssay() {
+  essayEl.innerHTML = "";
+  current.sentences.forEach((s, i) => {
+    const span = document.createElement("span");
+    span.className = "sentence" + (stage > 1 ? " locked" : "");
+    span.textContent = s.t;
+    const u = userTags[i];
+    if (u) {
+      const tg = TAGS[u];
+      span.classList.add("tagged");
+      span.style.setProperty("--sc", tg.color);
+      span.style.setProperty("--sc-soft", tg.soft);
+      const chip = document.createElement("span");
+      chip.className = "chip"; chip.textContent = tg.name;
+      span.appendChild(chip);
+    }
+    if (stage === 1) span.onclick = e => openPopover(i, e.clientX, e.clientY);
+    essayEl.appendChild(span);
+  });
+}
+
+const starsEl = $("stars");
+function renderStars() {
+  starsEl.innerHTML = "";
+  for (let k = 1; k <= 5; k++) {
+    const s = document.createElement("span");
+    s.textContent = "★";
+    s.className = k <= userStars ? "on" : "off";
+    if (stage === 1) s.onclick = () => { userStars = k; renderStars(); };
+    starsEl.appendChild(s);
+  }
+}
+function renderCount() {
+  $("count-hint").textContent = "已标记 " + Object.keys(userTags).length + " 句";
+}
+
+/* 标签弹窗 */
+const pop = $("popover");
+const popTags = $("pop-tags");
+Object.entries(TAGS).forEach(([key, tg]) => {
+  const b = document.createElement("button");
+  b.innerHTML = '<span class="dot" style="background:' + tg.color + '"></span>' + tg.name;
+  b.onclick = () => { userTags[popIdx] = key; closePopover(); renderEssay(); renderCount(); };
+  popTags.appendChild(b);
+});
+$("pop-clear").onclick = () => { delete userTags[popIdx]; closePopover(); renderEssay(); renderCount(); };
+function openPopover(idx, x, y) {
+  popIdx = idx;
+  pop.style.display = "block";
+  pop.style.left = Math.min(x, window.innerWidth - 256) + "px";
+  pop.style.top = Math.min(y + 10, window.innerHeight - 260) + "px";
+}
+function closePopover() { pop.style.display = "none"; popIdx = null; }
+document.addEventListener("click", e => {
+  if (pop.style.display === "block" && !pop.contains(e.target) && !e.target.classList.contains("sentence")) closePopover();
+});
+
+$("btn-to-est").onclick = () => {
+  renderEssay(); renderStars();
+  gotoStage(2);
+};
+
+/* ============ ② 估分 ============ */
+[["est-total", "v-est-total", v => estTotal = +v],
+ ["est-found", "v-est-found", v => estFound = +v],
+ ["est-score", "v-est-score", v => estScore = +v]
+].forEach(([id, vid, set]) => {
+  $(id).addEventListener("input", e => { set(e.target.value); $(vid).textContent = e.target.value; });
+});
+
+$("btn-reveal").onclick = () => {
+  computeGrading();
+  renderStage3();
+  gotoStage(3);
+};
+
+/* ============ ③ 对照 ============ */
+function computeGrading() {
+  const hit = [], part = [], falseIdx = [], missed = [];
+  current.sentences.forEach((s, i) => {
+    const u = userTags[i], e = s.tag;
+    if (u && e) { (u === e ? hit : part).push(i); }
+    else if (u && !e) falseIdx.push(i);
+    else if (!u && e) missed.push(i);
+  });
+  const totalErr = current.sentences.filter(s => s.tag).length;
+  const raw = hit.length * 2 + part.length * 1 - falseIdx.length * 1;
+  let score = Math.round(Math.max(0, raw) / (totalErr * 2) * 100);
+  if (userStars > 0 && Math.abs(userStars - current.expertStars) <= 1) score = Math.min(100, score + 5);
+  grading = { hit, part, falseIdx, missed, score, totalErr };
+}
+
+function nums(arr) { return arr.map(i => "第" + (i + 1) + "句").join("、"); }
+
+function buildPersona() {
+  const g = grading;
+  const bits = [];
+  if (g.missed.length) {
+    const missTags = {};
+    g.missed.forEach(i => { const tg = current.sentences[i].tag; missTags[tg] = (missTags[tg] || 0) + 1; });
+    const top = Object.entries(missTags).sort((a, b) => b[1] - a[1])[0];
+    if (top[0] === "factual") bits.push("你漏掉的错误里「史实类」占多数——不是标准不清，而是知识有盲区。这种盲区靠回教材自查时间轴就能补上。");
+    else bits.push("你漏掉的集中在「" + TAGS[top[0]].name + "」这类表述性错误——你查知识很仔细，但对「说法的方式」不够敏感。历史答案的错误往往不在事实里，而在措辞里。");
+  }
+  if (g.falseIdx.length) bits.push("你把 " + g.falseIdx.length + " 处正确表述误判为错误。批卷不只是找茬，还要能说出「这句为什么对」——标准过严同样是不准确。");
+  if (g.part.length) bits.push(g.part.length + " 处你发现了问题但贴错了标签，说明错误类型之间的边界还需要辨析。");
+  if (!g.missed.length && !g.falseIdx.length) bits.push("命中率极高且零误判——你的批卷标准已经非常接近教研组。");
+  const estGap = estScore - g.score;
+  if (Math.abs(estGap) <= 10) bits.push("顺带一提：你给自己估的分和实际只差 " + Math.abs(estGap) + " 分，自我认知很稳。");
+  else if (estGap > 10) bits.push("你给自己估的分比实际高了 " + estGap + " 分——批别人容易，认清自己的准确率难。");
+  else bits.push("你给自己估的分比实际低了 " + Math.abs(estGap) + " 分——其实你比自己以为的更准。");
+  return bits.join(" ");
+}
+
+function renderStage3() {
+  const g = grading;
+  $("score-num").textContent = g.score;
+  const band = g.score >= 85 ? "教研组长级批卷" : g.score >= 70 ? "骨干教师级" : g.score >= 50 ? "实习教师级" : "需要回炉的批卷新手";
+  $("score-band").textContent = band;
+  $("c-hit").textContent = g.hit.length;
+  $("c-part").textContent = g.part.length;
+  $("c-false").textContent = g.falseIdx.length;
+  $("c-miss").textContent = g.missed.length;
+
+  const parts = [];
+  if (g.hit.length) parts.push("✓ 标对：" + nums(g.hit));
+  if (g.part.length) parts.push("△ 标签错位：" + nums(g.part));
+  if (g.missed.length) parts.push("✗ 漏网：" + nums(g.missed));
+  if (g.falseIdx.length) parts.push("✗ 误判：" + nums(g.falseIdx));
+  $("list-line").innerHTML = "<b>你的批改清单：</b>" + (parts.join("　") || "你一句都没标。");
+
+  const found = g.hit.length + g.part.length;
+  $("est-compare").innerHTML = "<b>你的估分 vs 实际：</b>错误总数 你估 " + estTotal + " 处 / 实际 " + g.totalErr +
+    " 处；抓出 你估 " + estFound + " 处 / 实际 " + found + " 处；分数 你估 " + estScore + " / 实际 " + g.score + "。";
+
+  $("persona-text").textContent = buildPersona();
+  const starLine = userStars === 0
+    ? "你没有给星级（教研组给了 " + "★".repeat(current.expertStars) + "☆".repeat(5 - current.expertStars) + "）。"
+    : "你给 " + "★".repeat(userStars) + "，教研组给 " + "★".repeat(current.expertStars) +
+      (Math.abs(userStars - current.expertStars) <= 1 ? "——整体判断一致，+5 分。" : "——差距有点大，想想为什么。");
+  $("expert-summary").innerHTML = starLine + "<br>" + current.expertSummary;
+
+  // 教研组逐句批注
+  const box = $("essay-expert");
+  box.innerHTML = "";
+  current.sentences.forEach((s, i) => {
+    const span = document.createElement("span");
+    span.className = "sentence locked";
+    span.textContent = s.t;
+    const u = userTags[i];
+    if (s.tag) {
+      const tg = TAGS[s.tag];
+      span.classList.add("expert");
+      span.style.setProperty("--sc", tg.color);
+      span.style.setProperty("--sc-soft", tg.soft);
+      span.classList.add(u === s.tag ? "expert-hit" : "expert-miss");
+      const chip = document.createElement("span");
+      chip.className = "chip"; chip.textContent = tg.name;
+      span.appendChild(chip);
+      const note = document.createElement("span");
+      note.className = "expert-note";
+      note.style.setProperty("--sc", tg.color);
+      const sevChip = '<span class="sev-chip sev-' + Math.max(1, Math.min(5, s.sev)) + '">' + (SEV_NAME[Math.max(1, Math.min(5, s.sev))]) + "</span>";
+      let verdict;
+      if (u === s.tag) verdict = '<span class="verdict ok">✓ 你标对了</span>';
+      else if (u) verdict = '<span class="verdict no">✗ 你标的是「' + TAGS[u].name + "」，实为「" + tg.name + "」</span>";
+      else verdict = '<span class="verdict no">你漏掉了这一处</span>';
+      note.innerHTML = sevChip + verdict + "　<b>批注：</b>" + s.note;
+      box.appendChild(span);
+      box.appendChild(note);
+    } else if (u) {
+      span.classList.add("user-wrong");
+      const chip = document.createElement("span");
+      chip.className = "chip"; chip.style.background = "#A32D2D";
+      chip.textContent = TAGS[u].name;
+      span.appendChild(chip);
+      const note = document.createElement("span");
+      note.className = "expert-note";
+      note.innerHTML = '<span class="verdict no">误判</span>　这句没有问题。' + s.note;
+      box.appendChild(span);
+      box.appendChild(note);
+    } else {
+      box.appendChild(span);
+    }
+  });
+}
+
+/* ============ ④ 补测 ============ */
+$("btn-to-quiz").onclick = () => { buildQuiz(); gotoStage(4); };
+$("btn-to-quiz2").onclick = () => { buildQuiz(); gotoStage(4); };
+
+function buildQuiz() {
+  if (quizList.length) return;
+  const missedErr = grading.missed.concat(grading.part);
+  const targets = missedErr.concat(grading.falseIdx).slice(0, 5);
+  quizList = targets.map(i => ({ sentIdx: i, answeredRight: null }));
+  const box = $("quiz-list");
+  box.innerHTML = "";
+  if (!quizList.length) {
+    box.innerHTML = '<div class="card">你没有任何失手——直接进修复挑战。</div>';
+    $("btn-to-fix").disabled = false;
+    $("quiz-progress").textContent = "无需补测";
+    return;
+  }
+  quizList.forEach(q => {
+    const s = current.sentences[q.sentIdx];
+    const card = document.createElement("div");
+    card.className = "quiz-card";
+    const src = document.createElement("div");
+    src.className = "q-src";
+    src.textContent = "第" + (q.sentIdx + 1) + "句：" + (s.t.length > 42 ? s.t.slice(0, 42) + "…" : s.t);
+    card.appendChild(src);
+    const qq = document.createElement("div");
+    qq.className = "q-q";
+    qq.textContent = s.quiz.q;
+    card.appendChild(qq);
+    s.quiz.opts.forEach((opt, oi) => {
+      const b = document.createElement("button");
+      b.className = "opt";
+      b.textContent = opt;
+      b.onclick = () => {
+        const right = oi === s.quiz.ans;
+        q.answeredRight = right;
+        card.querySelectorAll(".opt").forEach((el, k) => {
+          el.disabled = true;
+          if (k === s.quiz.ans) el.classList.add("right");
+          else if (k === oi) el.classList.add("wrong");
+        });
+        const note = document.createElement("div");
+        note.className = "q-note show";
+        note.textContent = s.note;
+        card.appendChild(note);
+        updateQuizProgress();
+      };
+      card.appendChild(b);
+    });
+    box.appendChild(card);
+  });
+  updateQuizProgress();
+}
+
+function updateQuizProgress() {
+  const done = quizList.filter(q => q.answeredRight !== null).length;
+  const right = quizList.filter(q => q.answeredRight === true).length;
+  $("quiz-progress").textContent = "已完成 " + done + " / " + quizList.length + " 题（答对 " + right + "）";
+  $("btn-to-fix").disabled = done < quizList.length;
+}
+
+$("btn-to-fix").onclick = () => { renderFix(); gotoStage(5); };
+
+/* ============ ⑤ 修复挑战：能改多少改多少 ============ */
+function errIndexes() {
+  return current.sentences.map((s, i) => (s.tag ? i : null)).filter(x => x !== null);
+}
+
+function updateFixCount() {
+  const n = Object.keys(fixAnswers).length;
+  $("fix-count").textContent = "已动手 " + n + " / " + errIndexes().length + " 处";
+  $("btn-fix-submit").disabled = fixSubmitted || n === 0;
+}
+
+function renderFix() {
+  const box = $("fix-list");
+  box.innerHTML = "";
+  current.sentences.forEach((s, i) => {
+    if (!s.tag || !s.fix) return;
+    const tg = TAGS[s.tag];
+    const d = document.createElement("div");
+    d.className = "fix-item";
+    d.innerHTML = '<span class="idx">第' + (i + 1) + "句</span>" +
+      '<span class="tagchip" style="background:' + tg.soft + ';color:' + tg.color + '">' + tg.name + "</span><br>" + s.t;
+    const optBox = document.createElement("div");
+    optBox.className = "fopts";
+    s.fix.opts.forEach((opt, oi) => {
+      const b = document.createElement("button");
+      b.className = "fopt";
+      b.textContent = opt;
+      b.onclick = () => {
+        if (fixSubmitted) return;
+        if (fixAnswers[i] === oi) {
+          delete fixAnswers[i];
+          b.classList.remove("sel");
+        } else {
+          fixAnswers[i] = oi;
+          optBox.querySelectorAll(".fopt").forEach((el, k) => el.classList.toggle("sel", k === oi));
+        }
+        updateFixCount();
+      };
+      optBox.appendChild(b);
+    });
+    d.appendChild(optBox);
+    box.appendChild(d);
+  });
+  updateFixCount();
+}
+
+$("btn-fix-submit").onclick = () => {
+  fixSubmitted = true;
+  const errs = errIndexes().filter(i => current.sentences[i].fix);
+  let right = 0;
+  const attempted = Object.keys(fixAnswers).length;
+
+  $("fix-list").querySelectorAll(".fix-item").forEach((el, k) => {
+    const i = errs[k];
+    const f = current.sentences[i].fix;
+    const chosen = fixAnswers[i];
+    el.querySelectorAll(".fopt").forEach((b, oi) => {
+      b.disabled = true;
+      b.classList.remove("sel");
+      if (oi === f.ans) b.classList.add("right");
+      else if (oi === chosen) b.classList.add("wrong");
+    });
+    let verdict;
+    if (chosen === undefined) verdict = '<span class="verdict" style="color:#888780">未动手</span>';
+    else if (chosen === f.ans) { verdict = '<span class="verdict ok">✓ 修复成功</span>'; right++; }
+    else verdict = '<span class="verdict no">✗ 你的修改没改对</span>';
+    const std = document.createElement("div");
+    std.className = "fix-std";
+    std.innerHTML = verdict + "　<b>教研组标准修改：</b>" + f.std;
+    el.appendChild(std);
+  });
+
+  fixResult = { attempted, right, total: errs.length };
+
+  const box = $("fix-result");
+  box.style.display = "block";
+  let html = "<b>修复结果：</b>你动手改了 " + attempted + " 处，其中 " + right + " 处改对了。";
+  if (right === errs.length) html += " 全部修复成功——可以直接进教研组了。";
+  else if (attempted < errs.length) html += " 有 " + (errs.length - attempted) + " 处你没敢动——对照上面的标准修改，看看是哪里没把握。";
+  else html += " 敢全改是好事，对照标准修改看看差在哪。";
+  html += '<div class="persona-box" style="margin-top:10px"><b>修改的优先级逻辑：</b>先修论证核心（因果类错误直接决定文章立意），再修知识性硬伤（时间、人物、阵营这种一锤定音的错），表述瑕疵排在最后。抓主要矛盾——批卷如此，历史分析也如此。</div>';
+  html += '<button class="btn" id="btn-to-report" style="margin-top:6px">生成完整报告</button>';
+  box.innerHTML = html;
+  $("btn-to-report").onclick = () => { renderReport(); gotoStage(6); };
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+/* ============ ⑥ 报告 ============ */
+function renderReport() {
+  const g = grading;
+  const quizRight = quizList.filter(q => q.answeredRight === true).length;
+  const band = g.score >= 85 ? "教研组长级批卷" : g.score >= 70 ? "骨干教师级" : g.score >= 50 ? "实习教师级" : "需要回炉的批卷新手";
+  $("report").innerHTML =
+    '<div class="score-main"><span class="score-num">' + g.score + '</span><span class="score-band">' + band + "</span></div>" +
+    '<div class="score-grid">' +
+    '<div class="score-cell"><div class="n">' + g.hit.length + " / " + g.totalErr + '</div><div class="k">错误命中</div></div>' +
+    '<div class="score-cell"><div class="n">' + Math.abs(estScore - g.score) + '</div><div class="k">估分偏差（越小越好）</div></div>' +
+    '<div class="score-cell"><div class="n">' + (quizList.length ? quizRight + " / " + quizList.length : "免测") + '</div><div class="k">补测正确率</div></div>' +
+    '<div class="score-cell"><div class="n">' + (fixResult ? fixResult.right + " / " + fixResult.total : "—") + '</div><div class="k">修复成功（动手 ' + (fixResult ? fixResult.attempted : 0) + ' 处）</div></div>' +
+    "</div>" +
+    '<div class="persona-box"><b>一句话总结：</b>' + buildPersona() + "</div>" +
+    '<div class="list-line" style="margin-top:10px">这份报告就是你今天「批卷思维」的体检单：找错能力、自我认知、动手修复，三项分开看，比一句「分数不错」有用得多。</div>';
+}
+
+$("btn-again").onclick = () => { loadEssay(current); };
+$("btn-bank").onclick = () => { loadEssay(BANK[0]); };
+
+/* ============ 智谱 GLM：现场生成新习作 ============ */
+const SYS_PROMPT = "你是资深中学历史教研员，为「AI 学生习作批阅训练」出题。你要模拟一名学过但不扎实的高中生，针对给定的历史评析题写一篇观点评析习作，并以教研组身份完成逐句标注。你只输出 JSON，不输出任何其他文字。";
+
+function buildPrompt(question) {
+  return `题目：「${question}」
+
+请输出一个 JSON 对象，字段名必须完全一致：
+{
+  "question": 题目原文,
+  "expertStars": 1-5 的整数（教研组对这篇习作的整体星级，错误越多越低）,
+  "expertSummary": "教研组总评（60-100字，指出主要问题类型并给等级建议）",
+  "sentences": [ 10-12 个句子对象 ]
+}
+
+每个句子对象的结构：
+{
+  "t": "句子原文",
+  "tag": 错误类型，只能是 "factual"（史实错误）| "causal"（因果简单化）| "absolute"（绝对化表述）| "anachro"（以今律古）| "evidence"（证据缺失）| null（正确句子）,
+  "sev": 严重度，1-5 的整数（正确句子为 0；5=致命硬伤，1=小瑕疵）,
+  "note": "教研组批注（错误句指出错在哪、为什么错；正确句说明为什么这句没问题，30-60字）",
+  "quiz": { "q": "针对本句的三选一选择题题干", "opts": ["选项A","选项B","选项C"], "ans": 正确选项的下标0-2 },
+  "fix": 仅错误句需要此字段：{ "std": "教研组标准修改（正确的改写）", "opts": ["三个改写方案，只有一个真正改对，其余两个是貌似合理但仍有错的干扰项"], "ans": 正确改写的下标0-2 }
+}
+
+硬性要求：
+1. 全文 10-12 句，其中错误 6-8 处，其余句子必须完全正确（作为干扰句）；
+2. "factual" 史实错误至少 2 处，且必须是中学历史教材范围内的明确史实错误（时间、人物、事件、概念），不得编造冷门知识；
+3. 每处错误都要典型、可判定，不要模棱两可；正确句子要有干扰价值（如限定视角的规范表述、点到根本原因的论述）；
+4. 习作要像学生真写的：语言流畅、结构完整（开头表态、中间论述、结尾总结），错误自然混入；
+5. quiz 与 fix 的干扰项要有迷惑性，正确答案必须经得起教材检验；
+6. 所有内容符合中国大陆中学历史教材表述，不涉及敏感内容。`;
+}
+
+function getKey() { return ($("api-key").value || "").trim(); }
+function getModel() { return $("model-sel").value; }
+
+function extractJson(text) {
+  let t = text.trim();
+  t = t.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a >= 0 && b > a) t = t.slice(a, b + 1);
+  return t;
+}
+
+async function callGLM(question) {
+  const key = getKey();
+  if (!key) throw new Error("请先在右下角「AI 设置」填入智谱 API Key");
+  const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+    body: JSON.stringify({
+      model: getModel(),
+      messages: [
+        { role: "system", content: SYS_PROMPT },
+        { role: "user", content: buildPrompt(question) }
+      ],
+      temperature: 0.9,
+      response_format: { type: "json_object" }
+    })
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    if (res.status === 429) throw new Error("免费模型当前繁忙（智谱限流）。请等 1–2 分钟再点一次，或在「AI 设置」切换到 glm-5.3-flash（付费但更空闲）");
+    if (res.status === 401) throw new Error("API Key 无效，请检查「AI 设置」里的 Key 是否完整（形如 xxxx.xxxx）");
+    throw new Error("API 返回 " + res.status + "：" + t.slice(0, 160));
+  }
+  const data = await res.json();
+  const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!text) throw new Error("API 返回结构异常");
+  return JSON.parse(extractJson(text));
+}
+
+function validateEssay(e) {
+  if (!e || typeof e !== "object") return "返回不是 JSON 对象";
+  if (!Array.isArray(e.sentences)) return "缺少 sentences 数组";
+  if (e.sentences.length < 8 || e.sentences.length > 14) return "句子数量异常（" + e.sentences.length + "）";
+  let errs = 0, factuals = 0;
+  for (let i = 0; i < e.sentences.length; i++) {
+    const s = e.sentences[i];
+    if (typeof s.t !== "string" || s.t.length < 6) return "第" + (i + 1) + "句原文异常";
+    if (s.tag !== null && !TAGS[s.tag]) return "第" + (i + 1) + "句错误类型非法：" + s.tag;
+    if (typeof s.note !== "string" || !s.note) return "第" + (i + 1) + "句缺批注";
+    if (!s.quiz || !Array.isArray(s.quiz.opts) || s.quiz.opts.length !== 3 || !(s.quiz.ans >= 0 && s.quiz.ans <= 2)) return "第" + (i + 1) + "句补测题结构异常";
+    s.sev = s.tag ? Math.max(1, Math.min(5, +s.sev || 3)) : 0;
+    if (s.tag) {
+      errs++;
+      if (s.tag === "factual") factuals++;
+      if (!s.fix || !Array.isArray(s.fix.opts) || s.fix.opts.length !== 3 || !(s.fix.ans >= 0 && s.fix.ans <= 2) || !s.fix.std) return "第" + (i + 1) + "句修复数据异常";
+    }
+  }
+  if (errs < 4) return "错误太少（" + errs + "处），无法训练";
+  if (errs > e.sentences.length - 2) return "错误太多，几乎没有正确干扰句";
+  if (factuals < 1) return "缺少史实类错误";
+  e.expertStars = Math.max(1, Math.min(5, +e.expertStars || 2));
+  if (typeof e.expertSummary !== "string" || !e.expertSummary) e.expertSummary = "教研组总评缺失，请参考逐句批注。";
+  return null;
+}
+
+function setGenStatus(msg, cls) {
+  const el = $("gen-status");
+  el.textContent = msg;
+  el.className = cls || "";
+}
+
+$("btn-gen").onclick = async () => {
+  if (generating) return;
+  let topic = $("topic-sel").value;
+  if (topic === "random") topic = RANDOM_TOPICS[Math.floor(Math.random() * RANDOM_TOPICS.length)];
+  generating = true;
+  $("btn-gen").disabled = true;
+  setGenStatus("AI 学生「小智」正在作答，教研组同步批注中……（模型推理约 1–2 分钟，请耐心）");
+  try {
+    const raw = await callGLM(topic);
+    const err = validateEssay(raw);
+    if (err) throw new Error("生成的习作未通过质量校验：" + err + "。请再试一次。");
+    raw.qLabel = "题目 · 观点评析（12 分）";
+    raw.author = "作答人：AI 学生「小智」（本习作由 " + getModel() + " 现场生成）";
+    raw.source = "AI 现场生成";
+    loadEssay(raw);
+    setGenStatus("生成成功：共 " + raw.sentences.length + " 句，错误 " + raw.sentences.filter(s => s.tag).length + " 处。开始批卷吧！", "ok");
+  } catch (e) {
+    setGenStatus("生成失败：" + e.message + "。可重试，或回到题库题。", "err");
+  } finally {
+    generating = false;
+    $("btn-gen").disabled = false;
+  }
+};
+
+/* ============ AI 设置面板 ============ */
+const settingsBox = $("settings");
+$("settings-toggle").onclick = () => settingsBox.classList.toggle("open");
+
+/* 沙箱预览面板可能禁用 localStorage，做安全封装 */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式或沙箱 iframe：忽略，不影响使用 */ } }
+};
+
+const DEFAULT_KEY = "3c6e2ec5a6b34086a40f187ca4a30abb.BOnZRlKKHuQaO1PV";
+$("api-key").value = store.get("pijuan_glm_key", DEFAULT_KEY);
+$("model-sel").value = store.get("pijuan_glm_model", "glm-4.7-flash");
+function refreshKeyStatus() {
+  const el = $("key-status");
+  if (getKey()) { el.textContent = "✓ Key 已配置，可现场出题"; el.className = "ok"; }
+  else { el.textContent = "未配置 Key，仅可玩题库题"; el.className = "err"; }
+}
+$("api-key").addEventListener("input", () => { store.set("pijuan_glm_key", getKey()); refreshKeyStatus(); });
+$("model-sel").addEventListener("change", () => store.set("pijuan_glm_model", getModel()));
+refreshKeyStatus();
+
+/* 启动：加载题库精品题 */
+try {
+  loadEssay(BANK[0]);
+} catch (e) {
+  essayEl.innerHTML = '<span style="color:#A32D2D">页面初始化失败：' + (e && e.message ? e.message : e) + '</span>';
+  console.error(e);
+}
+</script>
+</body>
+</html>
